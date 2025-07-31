@@ -12,7 +12,7 @@ This project implements a conceptual CPU that operates on fuzzy numbers instead 
 
 - **Fuzzy Logic Gates**: Implementation of fundamental fuzzy operations (AND, OR, NOT, XOR)
 - **Hybrid Fuzzy Full Adder**: Combines multiple approaches for improved accuracy
-- **Multi-bit Fuzzy Arithmetic**: Supports variable bit-width fuzzy number operations
+- **Multi-bit Fuzzy Arithmetic**: Supports variable bit-width fuzzy number operations (Addition & Multiplication)
 - **Fuzzy ALU**: Arithmetic Logic Unit designed for fuzzy computations
 - **Fuzzy CPU**: Complete CPU simulation with registers and instruction execution
 
@@ -26,6 +26,11 @@ This project implements a conceptual CPU that operates on fuzzy numbers instead 
 - **Bit-level**: Each full adder combines both approaches with weighted averaging
 - **Multi-bit level**: Combines ripple-carry and arithmetic approximation approaches
 - **Adaptive weighting**: Higher input confidence → more arithmetic approach weight
+
+#### **Triple-Approach Fuzzy Multiplier**
+1. **Shift-Add Algorithm (40-60% weight)**: Traditional bit-wise multiplication with fuzzy shifts and additions
+2. **Probabilistic Approach (30-60% weight)**: Converts to crisp, multiplies, then converts back with uncertainty modeling
+3. **Booth-inspired Algorithm (20-30% weight)**: Modified Booth's algorithm adapted for fuzzy arithmetic
 
 ### 📊 **Advanced Analysis Features**
 
@@ -47,7 +52,12 @@ Fuzzy CPU Simulator
 │   ├── Ripple Carry
 │   ├── Arithmetic Approximation
 │   └── Adaptive Hybrid
-├── Fuzzy ALU
+├── Multi-bit Multipliers
+│   ├── Shift-Add Algorithm
+│   ├── Probabilistic Approach
+│   ├── Booth-inspired Algorithm
+│   └── Triple Hybrid
+├── Fuzzy ALU (ADD, MUL operations)
 └── Fuzzy CPU with Registers
 ```
 
@@ -97,6 +107,14 @@ make run
 - **Sinusoidal patterns**: ~5.7% error (good)
 - **Random patterns**: ~10.7% error (acceptable)
 
+### 🔢 **Multiplication Performance**
+
+- **Algorithm**: Triple-approach weighted averaging (Shift-Add, Probabilistic, Booth-inspired)
+- **Bit-wise Operations**: Implements left shifts for powers-of-2 and fuzzy addition for partial products
+- **Expected Characteristics**: Similar error patterns to addition with potential compound effects
+- **Implementation**: Comprehensive bit-wise multiplication with shift operations and fuzzy arithmetic
+- **Validation**: Ready for comprehensive testing across multiple bit widths and input patterns
+
 ## Code Structure
 
 ### Core Files
@@ -123,26 +141,37 @@ FuzzyFullAdderOutput fuzzy_full_adder(double A, double B, double Cin); // Hybrid
 
 #### **Multi-bit Operations**
 ```cpp
+// Addition operations
 std::vector<double> fuzzy_ripple_adder_basic(const std::vector<double>& A, const std::vector<double>& B);
 std::vector<double> fuzzy_arithmetic_adder(const std::vector<double>& A, const std::vector<double>& B);
 std::vector<double> fuzzy_ripple_adder(const std::vector<double>& A, const std::vector<double>& B); // Hybrid
+
+// Multiplication operations
+std::vector<double> fuzzy_multiply_basic(const std::vector<double>& A, const std::vector<double>& B);
+std::vector<double> fuzzy_multiply_probabilistic(const std::vector<double>& A, const std::vector<double>& B);
+std::vector<double> fuzzy_multiply_booth_inspired(const std::vector<double>& A, const std::vector<double>& B);
+std::vector<double> fuzzy_multiply(const std::vector<double>& A, const std::vector<double>& B); // Triple Hybrid
+
+// Utility operations
+std::vector<double> fuzzy_left_shift(const std::vector<double>& fuzzy_num, int shift_amount);
 ```
 
 #### **CPU Components**
 ```cpp
 class FuzzyALU {
     std::vector<double> add(const std::vector<double>& A, const std::vector<double>& B);
+    std::vector<double> multiply(const std::vector<double>& A, const std::vector<double>& B);
 };
 
 class FuzzyCPU {
     void load_register(char reg_name, const std::vector<double>& data);
-    void execute_instruction(const std::string& instruction);
+    void execute_instruction(const std::string& instruction); // Supports "ADD", "MUL"
 };
 ```
 
 ## Usage Examples
 
-### Basic Fuzzy Addition
+### Basic Fuzzy Operations
 ```cpp
 // Create a 4-bit fuzzy CPU
 FuzzyCPU cpu(4, true);
@@ -151,13 +180,17 @@ FuzzyCPU cpu(4, true);
 std::vector<double> fuzzy_A = {0.8, 0.6, 0.4, 0.2};  // ~4.2 in crisp value
 std::vector<double> fuzzy_B = {0.3, 0.7, 0.9, 0.5};  // ~11.1 in crisp value
 
-// Load registers and execute addition
+// Load registers
 cpu.load_register('A', fuzzy_A);
 cpu.load_register('B', fuzzy_B);
-cpu.execute_instruction("ADD");
 
-// Get result
-const auto& result = cpu.get_result_register();
+// Execute addition
+cpu.execute_instruction("ADD");
+const auto& sum_result = cpu.get_result_register();
+
+// Execute multiplication  
+cpu.execute_instruction("MUL");
+const auto& mul_result = cpu.get_result_register();
 ```
 
 ### Pattern Generation

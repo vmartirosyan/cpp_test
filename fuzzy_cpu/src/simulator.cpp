@@ -201,6 +201,200 @@ std::vector<double> fuzzy_ripple_adder(const std::vector<double>& FuzzyNumA,
     return hybrid_result;
 }
 
+// --- 3.5. Multi-Bit Fuzzy Multiplier (Bit-wise with Shifts and Additions) ---
+
+// Fuzzy left shift operation (multiply by 2^n)
+std::vector<double> fuzzy_left_shift(const std::vector<double>& fuzzy_num, int shift_amount) {
+    if (shift_amount <= 0) return fuzzy_num;
+    
+    std::vector<double> shifted(fuzzy_num.size() + shift_amount, 0.0);
+    
+    // Shift bits to the left (towards higher significance)
+    for (size_t i = 0; i < fuzzy_num.size(); ++i) {
+        if (i + shift_amount < shifted.size()) {
+            shifted[i + shift_amount] = fuzzy_num[i];
+        }
+    }
+    
+    return shifted;
+}
+
+// Basic fuzzy multiplication using shift-and-add algorithm
+std::vector<double> fuzzy_multiply_basic(const std::vector<double>& FuzzyNumA,
+                                        const std::vector<double>& FuzzyNumB) {
+    if (FuzzyNumA.empty() || FuzzyNumB.empty()) {
+        std::cerr << "Error: Cannot multiply empty fuzzy numbers." << std::endl;
+        return {};
+    }
+    
+    // Result can be up to sum of input bit widths
+    int result_bits = FuzzyNumA.size() + FuzzyNumB.size();
+    std::vector<double> product(result_bits, 0.0);
+    
+    // Shift-and-add multiplication algorithm
+    for (size_t i = 0; i < FuzzyNumB.size(); ++i) {
+        if (FuzzyNumB[i] > 0.0) { // Only process if multiplier bit has some membership
+            // Create partial product: A * B[i] * 2^i
+            std::vector<double> partial_product(FuzzyNumA.size(), 0.0);
+            
+            // Multiply each bit of A by the current bit of B
+            for (size_t j = 0; j < FuzzyNumA.size(); ++j) {
+                partial_product[j] = fuzzy_and(FuzzyNumA[j], FuzzyNumB[i]);
+            }
+            
+            // Shift the partial product by i positions (multiply by 2^i)
+            std::vector<double> shifted_product = fuzzy_left_shift(partial_product, i);
+            
+            // Add the shifted partial product to the accumulating result
+            // Resize product to accommodate the shifted partial product if needed
+            if (shifted_product.size() > product.size()) {
+                product.resize(shifted_product.size(), 0.0);
+            }
+            
+            // Ensure both vectors have the same size for addition
+            size_t max_size = std::max(product.size(), shifted_product.size());
+            product.resize(max_size, 0.0);
+            shifted_product.resize(max_size, 0.0);
+            
+            // Perform fuzzy addition of partial product to result
+            std::vector<double> temp_result = fuzzy_ripple_adder_basic(product, shifted_product);
+            product = temp_result;
+        }
+    }
+    
+    return product;
+}
+
+// Probabilistic approach to fuzzy multiplication
+std::vector<double> fuzzy_multiply_probabilistic(const std::vector<double>& FuzzyNumA,
+                                                const std::vector<double>& FuzzyNumB) {
+    if (FuzzyNumA.empty() || FuzzyNumB.empty()) {
+        return {};
+    }
+    
+    // Calculate crisp values and multiply them
+    double crisp_A = calculate_fuzzy_value(FuzzyNumA);
+    double crisp_B = calculate_fuzzy_value(FuzzyNumB);
+    double crisp_product = crisp_A * crisp_B;
+    
+    // Convert back to fuzzy representation with uncertainty modeling
+    int result_bits = FuzzyNumA.size() + FuzzyNumB.size();
+    std::vector<double> fuzzy_product(result_bits, 0.0);
+    
+    double remaining_value = crisp_product;
+    for (size_t i = 0; i < static_cast<size_t>(result_bits); ++i) {
+        double bit_weight = std::pow(2, i);
+        if (remaining_value >= bit_weight) {
+            // Strong membership if value definitely contains this bit
+            fuzzy_product[i] = std::min(1.0, remaining_value / bit_weight);
+            remaining_value -= bit_weight * fuzzy_product[i];
+        } else {
+            // Weak membership based on fractional contribution
+            fuzzy_product[i] = std::max(0.0, remaining_value / bit_weight);
+        }
+        
+        // Add uncertainty based on input fuzziness
+        // Use average uncertainty from corresponding bit positions
+        double uncertainty_A = (i < FuzzyNumA.size()) ? (1.0 - FuzzyNumA[i]) : 1.0;
+        double uncertainty_B = (i < FuzzyNumB.size()) ? (1.0 - FuzzyNumB[i]) : 1.0;
+        double avg_uncertainty = (uncertainty_A + uncertainty_B) / 2.0;
+        
+        // Reduce membership based on input uncertainty (multiplication amplifies uncertainty)
+        double uncertainty_factor = 1.0 - (avg_uncertainty * 0.15); // Slightly higher than addition
+        fuzzy_product[i] *= uncertainty_factor;
+        fuzzy_product[i] = std::max(0.0, std::min(1.0, fuzzy_product[i]));
+    }
+    
+    return fuzzy_product;
+}
+
+// Booth's algorithm inspired fuzzy multiplication (for signed numbers, simplified for unsigned)
+std::vector<double> fuzzy_multiply_booth_inspired(const std::vector<double>& FuzzyNumA,
+                                                 const std::vector<double>& FuzzyNumB) {
+    if (FuzzyNumA.empty() || FuzzyNumB.empty()) {
+        return {};
+    }
+    
+    int result_bits = FuzzyNumA.size() + FuzzyNumB.size();
+    std::vector<double> product(result_bits, 0.0);
+    
+    // Modified Booth-like approach: examine pairs of bits in multiplier
+    for (size_t i = 0; i < FuzzyNumB.size(); ++i) {
+        double current_bit = FuzzyNumB[i];
+        double next_bit = (i + 1 < FuzzyNumB.size()) ? FuzzyNumB[i + 1] : 0.0;
+        
+        // Decide operation based on bit pattern (simplified)
+        if (current_bit > next_bit) {
+            // Add shifted multiplicand
+            std::vector<double> shifted_A = fuzzy_left_shift(FuzzyNumA, i);
+            if (shifted_A.size() > product.size()) {
+                product.resize(shifted_A.size(), 0.0);
+            }
+            
+            // Ensure both vectors have the same size for addition
+            size_t max_size = std::max(product.size(), shifted_A.size());
+            product.resize(max_size, 0.0);
+            shifted_A.resize(max_size, 0.0);
+            
+            // Weight the addition by the difference in bit values
+            double weight = current_bit - next_bit;
+            for (size_t j = 0; j < shifted_A.size(); ++j) {
+                shifted_A[j] *= weight;
+            }
+            
+            std::vector<double> temp_result = fuzzy_ripple_adder_basic(product, shifted_A);
+            product = temp_result;
+        }
+    }
+    
+    return product;
+}
+
+// Hybrid fuzzy multiplication combining multiple approaches
+std::vector<double> fuzzy_multiply(const std::vector<double>& FuzzyNumA,
+                                  const std::vector<double>& FuzzyNumB) {
+    // Get results from all approaches
+    std::vector<double> basic_result = fuzzy_multiply_basic(FuzzyNumA, FuzzyNumB);
+    std::vector<double> prob_result = fuzzy_multiply_probabilistic(FuzzyNumA, FuzzyNumB);
+    std::vector<double> booth_result = fuzzy_multiply_booth_inspired(FuzzyNumA, FuzzyNumB);
+    
+    // Ensure all results have the same size
+    size_t max_size = std::max({basic_result.size(), prob_result.size(), booth_result.size()});
+    basic_result.resize(max_size, 0.0);
+    prob_result.resize(max_size, 0.0);
+    booth_result.resize(max_size, 0.0);
+    
+    // Combine results with adaptive weighting
+    std::vector<double> hybrid_result(max_size);
+    
+    for (size_t i = 0; i < max_size; ++i) {
+        // Calculate input confidence for this bit position
+        double input_conf_A = (i < FuzzyNumA.size()) ? FuzzyNumA[i] : 0.0;
+        double input_conf_B = (i < FuzzyNumB.size()) ? FuzzyNumB[i] : 0.0;
+        double avg_confidence = (input_conf_A + input_conf_B) / 2.0;
+        
+        // Adaptive weighting based on confidence and bit position
+        double basic_weight = 0.4 + 0.2 * avg_confidence;  // 40-60%
+        double prob_weight = 0.3 + 0.3 * avg_confidence;   // 30-60%
+        double booth_weight = 0.3 - 0.1 * avg_confidence;  // 20-30%
+        
+        // Normalize weights
+        double total_weight = basic_weight + prob_weight + booth_weight;
+        basic_weight /= total_weight;
+        prob_weight /= total_weight;
+        booth_weight /= total_weight;
+        
+        hybrid_result[i] = basic_weight * basic_result[i] + 
+                          prob_weight * prob_result[i] + 
+                          booth_weight * booth_result[i];
+        
+        // Ensure result is in valid range
+        hybrid_result[i] = std::max(0.0, std::min(1.0, hybrid_result[i]));
+    }
+    
+    return hybrid_result;
+}
+
 // --- 4. Value Calculation (Defuzzification) ---
 
 // Calculates the crisp decimal value of a multi-bit fuzzy number
@@ -262,8 +456,28 @@ public:
         return result;
     }
 
-    // Other fuzzy operations (subtract, multiply, etc.) would go here
-    // For simplicity, we only implement add for this example.
+    // Performs fuzzy multiplication on two multi-bit fuzzy numbers using hybrid approach
+    std::vector<double> multiply(const std::vector<double>& A, const std::vector<double>& B) {
+        if (verbose) {
+            std::cout << "\n--- ALU: Performing HYBRID MULTIPLY operation ---" << std::endl;
+            std::cout << "  Using combined Shift-Add + Probabilistic + Booth-inspired approaches" << std::endl;
+            // Calculate and display the product of crisp values
+            double crisp_A = calculate_fuzzy_value(A);
+            double crisp_B = calculate_fuzzy_value(B);
+            double expected_crisp_product = crisp_A * crisp_B;
+            std::cout << "  Expected Crisp Product: " << std::fixed << std::setprecision(4) << expected_crisp_product << std::endl;
+        }
+        
+        std::vector<double> result = fuzzy_multiply(A, B);
+        
+        if (verbose) {
+            print_fuzzy_number("Result Product", result);
+            std::cout << "----------------------------------------------" << std::endl;
+        }
+        return result;
+    }
+
+    // Other fuzzy operations (subtract, divide, etc.) would go here
 };
 
 // --- 6. Conceptual Fuzzy CPU ---
@@ -317,6 +531,8 @@ public:
     void execute_instruction(const std::string& instruction) {
         if (instruction == "ADD") {
             reg_Result = alu.add(reg_A, reg_B);
+        } else if (instruction == "MUL") {
+            reg_Result = alu.multiply(reg_A, reg_B);
         } else {
             std::cout << "Unknown instruction: " << instruction << std::endl;
         }
@@ -700,6 +916,62 @@ void compare_adder_approaches(const std::vector<double>& A, const std::vector<do
     }
 }
 
+// Function to compare different fuzzy multiplier approaches
+void compare_multiplier_approaches(const std::vector<double>& A, const std::vector<double>& B, bool verbose = true) {
+    if (verbose) {
+        std::cout << "\n=== MULTIPLIER APPROACH COMPARISON ===" << std::endl;
+        print_fuzzy_number("Input A", A);
+        print_fuzzy_number("Input B", B);
+        
+        double expected = calculate_fuzzy_value(A) * calculate_fuzzy_value(B);
+        std::cout << "Expected crisp product: " << std::fixed << std::setprecision(4) << expected << std::endl;
+    }
+    
+    // Test basic shift-add multiplication
+    std::vector<double> basic_result = fuzzy_multiply_basic(A, B);
+    double basic_value = calculate_fuzzy_value(basic_result);
+    double basic_error = calculate_relative_error(calculate_fuzzy_value(A) * calculate_fuzzy_value(B), basic_value);
+    
+    // Test probabilistic approach
+    std::vector<double> prob_result = fuzzy_multiply_probabilistic(A, B);
+    double prob_value = calculate_fuzzy_value(prob_result);
+    double prob_error = calculate_relative_error(calculate_fuzzy_value(A) * calculate_fuzzy_value(B), prob_value);
+    
+    // Test booth-inspired approach
+    std::vector<double> booth_result = fuzzy_multiply_booth_inspired(A, B);
+    double booth_value = calculate_fuzzy_value(booth_result);
+    double booth_error = calculate_relative_error(calculate_fuzzy_value(A) * calculate_fuzzy_value(B), booth_value);
+    
+    // Test hybrid approach
+    std::vector<double> hybrid_result = fuzzy_multiply(A, B);
+    double hybrid_value = calculate_fuzzy_value(hybrid_result);
+    double hybrid_error = calculate_relative_error(calculate_fuzzy_value(A) * calculate_fuzzy_value(B), hybrid_value);
+    
+    if (verbose) {
+        std::cout << "\nMultiplier Approach Comparison:" << std::endl;
+        std::cout << "  Shift-Add:     " << std::fixed << std::setprecision(4) << basic_value 
+                  << " (Error: " << std::setprecision(2) << basic_error << "%)" << std::endl;
+        std::cout << "  Probabilistic: " << std::setprecision(4) << prob_value 
+                  << " (Error: " << std::setprecision(2) << prob_error << "%)" << std::endl;
+        std::cout << "  Booth-inspired:" << std::setprecision(4) << booth_value 
+                  << " (Error: " << std::setprecision(2) << booth_error << "%)" << std::endl;
+        std::cout << "  Hybrid:        " << std::setprecision(4) << hybrid_value 
+                  << " (Error: " << std::setprecision(2) << hybrid_error << "%)" << std::endl;
+        
+        std::cout << "\nBest approach: ";
+        if (hybrid_error <= basic_error && hybrid_error <= prob_error && hybrid_error <= booth_error) {
+            std::cout << "Hybrid (chosen by default)" << std::endl;
+        } else if (basic_error <= prob_error && basic_error <= booth_error) {
+            std::cout << "Shift-Add" << std::endl;
+        } else if (prob_error <= booth_error) {
+            std::cout << "Probabilistic" << std::endl;
+        } else {
+            std::cout << "Booth-inspired" << std::endl;
+        }
+        std::cout << "====================================" << std::endl;
+    }
+}
+
 int main() {
     std::cout << "=== ENHANCED FUZZY CPU SIMULATOR WITH COMPREHENSIVE ANALYSIS ===" << std::endl;
     std::cout << "=================================================================" << std::endl;
@@ -720,10 +992,17 @@ int main() {
         
         cpu.load_register('A', fuzzy_A);
         cpu.load_register('B', fuzzy_B);
-        cpu.execute_instruction("ADD");
         
-        double expected = cpu.get_crisp_A() + cpu.get_crisp_B();
-        print_error_analysis(cpu.get_result_register(), expected);
+        // Test both addition and multiplication
+        std::cout << "\n=== ADDITION ===" << std::endl;
+        cpu.execute_instruction("ADD");
+        double expected_add = cpu.get_crisp_A() + cpu.get_crisp_B();
+        print_error_analysis(cpu.get_result_register(), expected_add);
+        
+        std::cout << "\n=== MULTIPLICATION ===" << std::endl;
+        cpu.execute_instruction("MUL");
+        double expected_mul = cpu.get_crisp_A() * cpu.get_crisp_B();
+        print_error_analysis(cpu.get_result_register(), expected_mul);
     }
 
     // Option 2: Run comprehensive testing (non-verbose for speed)
@@ -801,12 +1080,17 @@ int main() {
     std::cout << "\n=== ANALYSIS COMPLETE ===" << std::endl;
     std::cout << "Total tests performed: " << all_results.size() << std::endl;
     
-    // Optional: Compare adder approaches on a sample input
-    /*
+    // Demonstrate multiplier approaches on sample inputs
+    std::cout << "\n\n6. MULTIPLIER APPROACH DEMONSTRATION" << std::endl;
+    std::cout << "------------------------------------" << std::endl;
     std::vector<double> sample_A = {0.8, 0.6, 0.4};
     std::vector<double> sample_B = {0.5, 0.7, 0.9};
+    compare_multiplier_approaches(sample_A, sample_B);
+    
+    // Also compare adder approaches
+    std::cout << "\n7. ADDER APPROACH DEMONSTRATION" << std::endl;
+    std::cout << "--------------------------------" << std::endl;
     compare_adder_approaches(sample_A, sample_B);
-    */
 
     return 0;
 }
